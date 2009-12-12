@@ -79,7 +79,7 @@ public class Logger extends Activity {
     	mScrollView.post(new Runnable() {
     		public void run() {
     			if (autoscroll == true) {
-    				mScrollView.scrollTo(mLines.getBottom(), mScrollView.getHeight());
+    				mScrollView.scrollTo(0, mLines.getBottom() - mScrollView.getHeight());
     			}
     		}
     	});
