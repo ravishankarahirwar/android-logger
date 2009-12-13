@@ -231,6 +231,8 @@ public class LogProcessor extends Service {
 		    		if (mFilterTag.toLowerCase().equals(tag.toLowerCase().trim())) {
 		    			w.write(line + "\n");
 		    		}
+		    	} else {
+		    		w.write(mScrollback.elementAt(i) + "\n");
 		    	}
 
 				i++;
