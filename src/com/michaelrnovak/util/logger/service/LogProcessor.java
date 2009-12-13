@@ -33,13 +33,14 @@ import java.util.Vector;
 
 public class LogProcessor extends Service {
 	
-	private Thread mThread;
-	private Thread mWriterThread;
-	private Process mProcess;
 	private static Handler mHandler;
 	private String mFile;
+	private String mBuffer = "main";
 	private Vector<String> mScrollback;
 	private int mLines;
+	private int mType;
+	private volatile boolean threadKill = false;
+	private volatile boolean mStatus = false;
 	public int MAX_LINES = 250;
 	public static final int MSG_READ_FAIL = 1;
 	public static final int MSG_LOG_FAIL = 2;
@@ -61,12 +62,23 @@ public class LogProcessor extends Service {
 	Runnable worker = new Runnable() {
 		public void run() {
 			runLog();
+			mStatus = true;
+			Log.d("Logger", "status... " + mStatus);
+			return;
 		}
 	};
 	
 	private void runLog() {
+		Process process = null;
+		
 		try {
-			mProcess = Runtime.getRuntime().exec("/system/bin/logcat");
+			
+			if (mType == 0) {
+				process = Runtime.getRuntime().exec("/system/bin/logcat -b " + mBuffer);
+			} else if (mType == 1) {
+				process = Runtime.getRuntime().exec("dmesg -s 1000000");
+			}
+			
 		} catch (IOException e) {
 			communicate(MSG_LOG_FAIL);
 		}
@@ -74,11 +86,13 @@ public class LogProcessor extends Service {
 		BufferedReader reader = null;
 		
 		try {
-			reader = new BufferedReader(new InputStreamReader(mProcess.getInputStream()));
+			reader = new BufferedReader(new InputStreamReader(process.getInputStream()));
 			
 			String line;
 			
-			while ((line = reader.readLine()) != null) {
+			while (!killRequested()) {
+				line = reader.readLine();
+				
 				logLine(line);
 				
 				if (mLines == MAX_LINES) {
@@ -89,9 +103,28 @@ public class LogProcessor extends Service {
 				mLines++;
 			}
 			
+			Log.i("Logger", "Prepping thread for termination");
+			reader.close();
+			process.destroy();
+			process = null;
+			reader = null;
+			mScrollback.removeAllElements();
+			mScrollback = null;
+			mLines = 0;
 		} catch (IOException e) {
 			communicate(MSG_READ_FAIL);
 		}
+		
+		Log.d("Logger", "Exiting thread...");
+		return;
+	}
+	
+	private synchronized void requestKill() {
+		threadKill = true;
+	}
+	
+	private synchronized boolean killRequested() {
+		return threadKill;
 	}
 	
 	private void communicate(int msg) {
@@ -112,51 +145,72 @@ public class LogProcessor extends Service {
 	
 	@Override
 	public boolean onUnbind(Intent intent) {
-		Thread tmp = mThread;
-		mThread = null;
-		tmp.interrupt();
+		requestKill();
 		stopSelf();
 		
 		return false;
 	}
 	
 	private final ILogProcessor.Stub mBinder = new ILogProcessor.Stub() {
-		public void reset() {
-			Thread thr = mThread;
-			mThread = null;
-			thr.interrupt();
+		public void reset(String buffer) {
+			requestKill();
+
+			while (!mStatus) {
+				try {
+					Log.d("Logger", "waiting...");
+				} catch (Exception e) {
+					Log.d("Logger", "Woot! obj has been interrupted!");
+				}
+			}
 			
-			mLines = 0;
-			mScrollback.removeAllElements();
-			mThread = new Thread(worker);
-			mThread.start();
-		}
-		
-		public void run() {
+			threadKill = false;
+			mBuffer = buffer.toLowerCase();
 			mLines = 0;
 			mScrollback = new Vector<String>();
-			mThread = new Thread(worker);
-			mThread.start();
+			Thread thr = new Thread(worker);
+			thr.start();
+		}
+		
+		public void run(int type) {
+			mType = type;
+			mLines = 0;
+			mScrollback = new Vector<String>();
+			Thread thr = new Thread(worker);
+			thr.start();
+		}
+		
+		public void restart(int type) {
+			requestKill();
+			
+			while(!mStatus) {
+				try {
+					Log.d("Logger", "waiting...");
+				} catch (Exception e) {
+					Log.d("Logger", "Woot! we have an exception");
+				}
+			}
+			
+			threadKill = false;
+			run(type);
 		}
 		
 		public void stop() {
 			Log.i("Logger", "stop() method called in service.");
-			Thread tmp = mThread;
-			mThread = null;
-			tmp.interrupt();
+			requestKill();
 			stopSelf();
 		}
 		
 		public void write(String file) {
 			mFile = file;
-			mWriterThread = new Thread(writer);
-			mWriterThread.start();
+			Thread thr = new Thread(writer);
+			thr.start();
 		}
 	};
 	
 	Runnable writer = new Runnable() {
 		public void run() {
 			writeLog();
+			return;
 		}
 	};
 	
@@ -177,14 +231,14 @@ public class LogProcessor extends Service {
 				Message.obtain(mHandler, MSG_LOG_SAVE, "attachment").sendToTarget();
 			}
 			
+			w.close();
+			f = null;
 		} catch (Exception e) {
 			Log.e("Logger", "Error writing the log to a file. Exception: " + e.toString());
 			Message.obtain(mHandler, MSG_LOG_SAVE, "error").sendToTarget();
 		}
 		
-		Thread thr = mWriterThread;
-		mWriterThread = null;
-		thr.interrupt();
+		return;
 	}
 
 }

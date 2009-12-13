@@ -62,17 +62,28 @@ public class Logger extends Activity {
 	private AlertDialog mDialog;
 	private ProgressDialog mProgressDialog;
 	private int mFilter = -1;
+	private int mBuffer = 0;
+	private int mLogType = 0;
+	private String mFilterTag = "";
 	private boolean mServiceRunning = false;
 	public int MAX_LINES = 250;
 	public static final int DIALOG_FILTER_ID = 1;
 	public static final int DIALOG_SAVE_ID = 2;
 	public static final int DIALOG_SAVE_PROGRESS_ID = 3;
 	public static final int DIALOG_EMAIL_ID = 4;
+	public static final int DIALOG_BUFFER_ID = 5;
+	public static final int DIALOG_TYPE_ID = 6;
+	public static final int DIALOG_TAG_ID = 7;
 	public static final int FILTER_OPTION = Menu.FIRST;
 	public static final int EMAIL_OPTION = Menu.FIRST + 1;
 	public static final int SAVE_OPTION = Menu.FIRST + 2;
+	public static final int BUFFER_OPTION = Menu.FIRST + 3;
+	public static final int TYPE_OPTION = Menu.FIRST + 4;
+	public static final int TAG_OPTION = Menu.FIRST + 5;
 	final CharSequence[] items = {"Debug", "Error", "Info", "Verbose", "Warn", "All"};
 	final char[] mFilters = {'D', 'E', 'I', 'V', 'W'};
+	final CharSequence[] buffers = {"Main", "Radio", "Events"};
+	final CharSequence[] types = {"Logcat", "Dmesg"};
 	
     /** Called when the activity is first created. */
     @Override
@@ -105,13 +116,36 @@ public class Logger extends Activity {
     }
     
     @Override
-    public boolean onCreateOptionsMenu(Menu menu) {
-    	super.onCreateOptionsMenu(menu);
+    public boolean onPrepareOptionsMenu(Menu menu) {
     	
-    	menu.add(0, FILTER_OPTION, 1, "Filter Log").setIcon(android.R.drawable.ic_menu_view);
-    	menu.add(0, EMAIL_OPTION, 2, "Email Log").setIcon(android.R.drawable.ic_menu_send);
-    	menu.add(0, SAVE_OPTION, 3, "Save Log").setIcon(android.R.drawable.ic_menu_save);
-    	return true;
+    	MenuItem item = menu.getItem(0);
+    	
+    	if (mBuffer != 0) {
+    		item.setEnabled(false);
+    	} else {
+    		item.setEnabled(true);
+    	}
+    	
+    	return super.onPrepareOptionsMenu(menu);
+    }
+    
+    
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+    	
+    	if (mBuffer == 0) {
+    		menu.add(0, FILTER_OPTION, 1, "Filter Log").setIcon(android.R.drawable.ic_menu_view);
+    	} else {
+    		menu.add(0, FILTER_OPTION, 1, "Filter Log").setIcon(android.R.drawable.ic_menu_view).setEnabled(false);
+    	}
+    	
+    	menu.add(0, TAG_OPTION, 2, "Tag Filter").setIcon(android.R.drawable.ic_menu_sort_alphabetically);
+    	menu.add(0, BUFFER_OPTION, 3, "Choose Buffer").setIcon(android.R.drawable.ic_menu_manage);
+    	menu.add(0, EMAIL_OPTION, 4, "Email Log").setIcon(android.R.drawable.ic_menu_send);
+    	menu.add(0, SAVE_OPTION, 5, "Save Log").setIcon(android.R.drawable.ic_menu_save);
+    	menu.add(0, TYPE_OPTION, 6, "Log Type").setIcon(android.R.drawable.ic_menu_set_as);
+    	
+    	return super.onCreateOptionsMenu(menu);
     }
     
     @Override
@@ -125,6 +159,15 @@ public class Logger extends Activity {
     		break;
     	case SAVE_OPTION:
     		onCreateDialog(DIALOG_SAVE_ID);
+    		break;
+    	case BUFFER_OPTION:
+    		onCreateDialog(DIALOG_BUFFER_ID);
+    		break;
+    	case TYPE_OPTION:
+    		onCreateDialog(DIALOG_TYPE_ID);
+    		break;
+    	case TAG_OPTION:
+    		onCreateDialog(DIALOG_TAG_ID);
     		break;
     	default:
     		break;
@@ -157,6 +200,27 @@ public class Logger extends Activity {
     	case DIALOG_EMAIL_ID:
     		mProgressDialog = ProgressDialog.show(this, "", "Generating attachment...", true);
     		return mProgressDialog;
+    	case DIALOG_BUFFER_ID:
+    		builder.setTitle("Select a buffer");
+    		builder.setSingleChoiceItems(buffers, mBuffer, mBufferListener);
+    		mDialog = builder.create();
+    		break;
+    	case DIALOG_TYPE_ID:
+    		builder.setTitle("Select a log");
+    		builder.setSingleChoiceItems(types, mLogType, mTypeListener);
+    		mDialog = builder.create();
+    		break;
+    	case DIALOG_TAG_ID:
+    		builder.setTitle("Enter tag name");
+    		LayoutInflater inflate = (LayoutInflater) getSystemService(LAYOUT_INFLATER_SERVICE);
+    		View t = inflate.inflate(R.layout.file_save, (ViewGroup) findViewById(R.id.layout_root));
+    		EditText et = (EditText) t.findViewById(R.id.filename);
+    		et.setText(mFilterTag);
+    		builder.setView(t);
+    		builder.setNegativeButton("Cancel", mTagListener);
+    		builder.setPositiveButton("Filter", mTagListener);
+    		mDialog = builder.create();
+    		break;
     	default:
     		break;
     	}
@@ -179,6 +243,25 @@ public class Logger extends Activity {
 		}
 	};
 	
+	DialogInterface.OnClickListener mBufferListener = new DialogInterface.OnClickListener() {
+		
+		@Override
+		public void onClick(DialogInterface dialog, int which) {
+			mBuffer = which;
+			
+			updateBuffer();
+		}
+	};
+	
+	DialogInterface.OnClickListener mTypeListener = new DialogInterface.OnClickListener() {
+		
+		@Override
+		public void onClick(DialogInterface dialog, int which) {
+			mLogType = which;
+			updateLog();
+		}
+	};
+	
 	DialogInterface.OnClickListener mButtonListener = new DialogInterface.OnClickListener() {
 		
 		@Override
@@ -197,6 +280,18 @@ public class Logger extends Activity {
 		}
 	};
 
+	DialogInterface.OnClickListener mTagListener = new DialogInterface.OnClickListener() {
+		@Override
+		public void onClick(DialogInterface dialog, int which) {
+			if (which == -1) {
+				EditText et = (EditText) mDialog.findViewById(R.id.filename);
+				
+				mFilterTag = et.getText().toString().trim();
+				updateFilterTag();
+			}
+		}
+	};
+	
     public void stopLogging() {
     	unbindService(mConnection);
     	mServiceRunning = false;
@@ -210,7 +305,7 @@ public class Logger extends Activity {
     	bindService(new Intent(this, LogProcessor.class), mConnection, Context.BIND_AUTO_CREATE);
     	
     	try {
-    		mService.run();
+    		mService.run(mLogType);
     		mServiceRunning = true;
     	} catch (RemoteException e) {
     		Log.e("Logger", "Could not start logging");
@@ -222,9 +317,22 @@ public class Logger extends Activity {
     		return;
     	}
     	
+    	if (!mFilterTag.equals("")) {
+    		String tag = line.substring(2, line.indexOf("("));
+    		
+    		if (!mFilterTag.toLowerCase().equals(tag.toLowerCase().trim())) {
+    			return;
+    		}
+    	}
+    	
     	TextView lineView = new TextView(this);
     	lineView.setTypeface(Typeface.MONOSPACE);
-    	lineView.setText(new LogFormattedString(line));
+    	
+    	if (mLogType == 0) {
+    		lineView.setText(new LogFormattedString(line));
+    	} else {
+    		lineView.setText(line);
+    	}
     	
     	final boolean autoscroll = 
             (mScrollView.getScrollY() + mScrollView.getHeight() >= mLines.getBottom()) ? true : false;
@@ -248,7 +356,43 @@ public class Logger extends Activity {
     	mLines.removeAllViews();
     	
     	try {
-    		mService.reset();
+    		mService.reset(buffers[mBuffer].toString());
+    	} catch (RemoteException e) {
+    		Log.e("Logger", "Service is gone...");
+    	}
+    	
+    	mDialog.dismiss();
+    }
+    
+    private void updateBuffer() {
+    	mLines.removeAllViews();
+    	
+    	try {
+    		mService.reset(buffers[mBuffer].toString());
+    	} catch (RemoteException e) {
+    		Log.e("Logger", "Service is gone...");
+    	}
+    	
+    	mDialog.dismiss();
+    }
+    
+    private void updateLog() {
+    	mLines.removeAllViews();
+    	
+    	try {
+    		mService.restart(mLogType);
+    	} catch (RemoteException e) {
+    		Log.e("Logger", "Service is gone...");
+    	}
+    	
+    	mDialog.dismiss();
+    }
+    
+    private void updateFilterTag() {
+    	mLines.removeAllViews();
+    	
+    	try {
+    		mService.reset(buffers[mBuffer].toString());
     	} catch (RemoteException e) {
     		Log.e("Logger", "Service is gone...");
     	}
@@ -310,7 +454,7 @@ public class Logger extends Activity {
 			LogProcessor.setHandler(mHandler);
 			
 			try {
-				mService.run();
+				mService.run(mLogType);
 				mServiceRunning = true;
 			} catch (RemoteException e) {
 				Log.e("Logger", "Could not start logging");

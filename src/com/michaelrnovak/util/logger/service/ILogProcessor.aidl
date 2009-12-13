@@ -19,8 +19,9 @@ package com.michaelrnovak.util.logger.service;
 
 interface ILogProcessor {
 	
-	void reset();
-	void run();
+	void reset(String buffer);
+	void run(int type);
+	void restart(int type);
 	void stop();
 	void write(String file);
 }
