@@ -23,19 +23,24 @@ import android.os.Message;
 import android.util.Log;
 
 import java.io.BufferedReader;
+import java.io.File;
+import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
 
 public class LogProcessor extends Service {
 	
 	private Thread mThread;
+	private Thread mWriterThread;
 	private Process mProcess;
 	private static Handler mHandler;
+	private String mFile;
 	private int mLines;
 	public static final int MSG_READ_FAIL = 1;
 	public static final int MSG_LOG_FAIL = 2;
 	public static final int MSG_NEW_LINE = 3;
 	public static final int MSG_RESET_LOG = 4;
+	public static final int MSG_LOG_SAVE = 5;
 	
 	@Override
 	public void onCreate() {
@@ -126,6 +131,55 @@ public class LogProcessor extends Service {
 			tmp.interrupt();
 			stopSelf();
 		}
+		
+		public void write(String file) {
+			mFile = file;
+			mWriterThread = new Thread(writer);
+			mWriterThread.start();
+		}
 	};
+	
+	Runnable writer = new Runnable() {
+		public void run() {
+			writeLog();
+		}
+	};
+	
+	private void writeLog() {
+		Process p = null;
+		
+		try {
+			p = Runtime.getRuntime().exec("/system/bin/logcat");
+		} catch (IOException e) {
+			Log.e("Logger", "Error opening the logcat bin");
+		}
+		
+		BufferedReader reader = null;
+		
+		try {
+			reader = new BufferedReader(new InputStreamReader(p.getInputStream()));
+			
+			File f = new File("/sdcard/" + mFile);
+			FileWriter w = new FileWriter(f);
+			int stopLine = mLines;
+			int i = 0;
+			
+			while (i != stopLine) {
+				String line = reader.readLine();
+				w.write(line + "\n");
+				i++;
+			}
+			
+			Message.obtain(mHandler, MSG_LOG_SAVE, "saved").sendToTarget();
+			
+		} catch (Exception e) {
+			Log.e("Logger", "Error writing the log to a file. Exception: " + e.toString());
+			Message.obtain(mHandler, MSG_LOG_SAVE, "error").sendToTarget();
+		}
+		
+		Thread thr = mWriterThread;
+		mWriterThread = null;
+		thr.interrupt();
+	}
 
 }

@@ -5,4 +5,5 @@ interface ILogProcessor {
 	void reset();
 	void run();
 	void stop();
+	void write(String file);
 }

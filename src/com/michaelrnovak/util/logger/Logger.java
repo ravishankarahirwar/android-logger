@@ -18,6 +18,7 @@ package com.michaelrnovak.util.logger;
 import android.app.Activity;
 import android.app.AlertDialog;
 import android.app.Dialog;
+import android.app.ProgressDialog;
 import android.content.ComponentName;
 import android.content.Context;
 import android.content.DialogInterface;
@@ -33,12 +34,17 @@ import android.text.SpannableString;
 import android.text.style.ForegroundColorSpan;
 import android.text.style.StyleSpan;
 import android.util.Log;
+import android.view.LayoutInflater;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.View;
+import android.view.ViewGroup;
 import android.view.ViewGroup.LayoutParams;
+import android.widget.EditText;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
+import android.widget.Toast;
 
 import com.michaelrnovak.util.logger.service.ILogProcessor;
 import com.michaelrnovak.util.logger.service.LogProcessor;
@@ -50,12 +56,16 @@ public class Logger extends Activity {
 	private ScrollView mScrollView;
 	private LinearLayout mLines;
 	private AlertDialog mDialog;
+	private ProgressDialog mProgressDialog;
 	private int mFilter = -1;
 	private boolean mServiceRunning = false;
 	public int MAX_LINES = 250;
 	public static final int DIALOG_FILTER_ID = 1;
+	public static final int DIALOG_SAVE_ID = 2;
+	public static final int DIALOG_SAVE_PROGRESS_ID = 3;
 	public static final int FILTER_OPTION = Menu.FIRST;
 	public static final int EMAIL_OPTION = Menu.FIRST + 1;
+	public static final int SAVE_OPTION = Menu.FIRST + 2;
 	final CharSequence[] items = {"Debug", "Error", "Info", "Verbose", "Warn", "All"};
 	final char[] mFilters = {'D', 'E', 'I', 'V', 'W'};
 	
@@ -87,8 +97,8 @@ public class Logger extends Activity {
     	super.onCreateOptionsMenu(menu);
     	
     	menu.add(0, FILTER_OPTION, 1, "Filter Log").setIcon(android.R.drawable.ic_menu_view);
-    	menu.add(0, EMAIL_OPTION, 1, "Email Log").setIcon(android.R.drawable.ic_menu_send);
-    	
+    	menu.add(0, EMAIL_OPTION, 2, "Email Log").setIcon(android.R.drawable.ic_menu_send);
+    	menu.add(0, SAVE_OPTION, 3, "Save Log").setIcon(android.R.drawable.ic_menu_save);
     	return true;
     }
     
@@ -99,6 +109,11 @@ public class Logger extends Activity {
     		onCreateDialog(DIALOG_FILTER_ID);
     		break;
     	case EMAIL_OPTION:
+    		break;
+    	case SAVE_OPTION:
+    		onCreateDialog(DIALOG_SAVE_ID);
+    		break;
+    	default:
     		break;
     	}
     	
@@ -113,6 +128,20 @@ public class Logger extends Activity {
     		builder.setTitle("Select a filter level");
     		builder.setSingleChoiceItems(items, mFilter, mClickListener);
     		mDialog = builder.create();
+    		break;
+    	case DIALOG_SAVE_ID:
+    		builder.setTitle("Enter filename:");
+    		LayoutInflater inflater = (LayoutInflater) getSystemService(LAYOUT_INFLATER_SERVICE);
+    		View v = inflater.inflate(R.layout.file_save, (ViewGroup) findViewById(R.id.layout_root));
+    		builder.setView(v);
+    		builder.setNegativeButton("Cancel", mButtonListener);
+    		builder.setPositiveButton("Save", mButtonListener);
+    		mDialog = builder.create();
+    		break;
+    	case DIALOG_SAVE_PROGRESS_ID:
+    		mProgressDialog = ProgressDialog.show(this, "", "Saving...", true);
+    		break;
+    	default:
     		break;
     	}
     	
@@ -131,6 +160,24 @@ public class Logger extends Activity {
 			}
 			
 			updateFilter();
+		}
+	};
+	
+	DialogInterface.OnClickListener mButtonListener = new DialogInterface.OnClickListener() {
+		
+		@Override
+		public void onClick(DialogInterface dialog, int which) {
+			if (which == -1) {
+				EditText et = (EditText) mDialog.findViewById(R.id.filename);
+	    		onCreateDialog(DIALOG_SAVE_PROGRESS_ID);
+	    		Log.d("Logger", "Filename: " + et.getText().toString());
+	    		
+				try {
+					mService.write(et.getText().toString());
+				} catch (RemoteException e) {
+					Log.e("Logger", "Trouble writing the log to a file");
+				}
+			}
 		}
 	};
 
@@ -193,6 +240,16 @@ public class Logger extends Activity {
     	mDialog.dismiss();
     }
     
+    private void saveResult(String msg) {
+    	mProgressDialog.dismiss();
+    	
+    	if (msg.equals("error")) {
+    		Toast.makeText(this, "Error while saving the log to file!", Toast.LENGTH_LONG).show();
+    	} else {
+    		Toast.makeText(this, "Log has been saved to file.", Toast.LENGTH_LONG).show();
+    	}
+    }
+    
     public Handler mHandler = new Handler() {
     	public void handleMessage(Message msg) {
     		switch (msg.what) {
@@ -204,6 +261,9 @@ public class Logger extends Activity {
     			break;
     		case LogProcessor.MSG_NEW_LINE:
     			handleLogMessage((String) msg.obj);
+    			break;
+    		case LogProcessor.MSG_LOG_SAVE:
+    			saveResult((String) msg.obj);
     			break;
     		default:
     			super.handleMessage(msg);
