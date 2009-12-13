@@ -27,6 +27,7 @@ import java.io.File;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.InputStreamReader;
+import java.util.Vector;
 
 public class LogProcessor extends Service {
 	
@@ -35,7 +36,9 @@ public class LogProcessor extends Service {
 	private Process mProcess;
 	private static Handler mHandler;
 	private String mFile;
+	private Vector<String> mScrollback;
 	private int mLines;
+	public int MAX_LINES = 250;
 	public static final int MSG_READ_FAIL = 1;
 	public static final int MSG_LOG_FAIL = 2;
 	public static final int MSG_NEW_LINE = 3;
@@ -75,6 +78,12 @@ public class LogProcessor extends Service {
 			
 			while ((line = reader.readLine()) != null) {
 				logLine(line);
+				
+				if (mLines == MAX_LINES) {
+					mScrollback.removeElementAt(0);
+				}
+				
+				mScrollback.add(line);
 				mLines++;
 			}
 			
@@ -111,15 +120,19 @@ public class LogProcessor extends Service {
 	
 	private final ILogProcessor.Stub mBinder = new ILogProcessor.Stub() {
 		public void reset() {
-			mThread.interrupt();
-			mLines = 0;
+			Thread thr = mThread;
+			mThread = null;
+			thr.interrupt();
 			
+			mLines = 0;
+			mScrollback.removeAllElements();
 			mThread = new Thread(worker);
 			mThread.start();
 		}
 		
 		public void run() {
 			mLines = 0;
+			mScrollback = new Vector<String>();
 			mThread = new Thread(worker);
 			mThread.start();
 		}
@@ -146,31 +159,21 @@ public class LogProcessor extends Service {
 	};
 	
 	private void writeLog() {
-		Process p = null;
 		
-		try {
-			p = Runtime.getRuntime().exec("/system/bin/logcat");
-		} catch (IOException e) {
-			Log.e("Logger", "Error opening the logcat bin");
-		}
-		
-		BufferedReader reader = null;
-		
-		try {
-			reader = new BufferedReader(new InputStreamReader(p.getInputStream()));
-			
+		try {			
 			File f = new File("/sdcard/" + mFile);
 			FileWriter w = new FileWriter(f);
-			int stopLine = mLines;
-			int i = 0;
 			
-			while (i != stopLine) {
-				String line = reader.readLine();
-				w.write(line + "\n");
+			for (int i = 0; i < mScrollback.size(); i++) {
+				w.write(mScrollback.elementAt(i) + "\n");
 				i++;
 			}
 			
-			Message.obtain(mHandler, MSG_LOG_SAVE, "saved").sendToTarget();
+			if (!mFile.equals("tmp.log")) {
+				Message.obtain(mHandler, MSG_LOG_SAVE, "saved").sendToTarget();
+			} else {
+				Message.obtain(mHandler, MSG_LOG_SAVE, "attachment").sendToTarget();
+			}
 			
 		} catch (Exception e) {
 			Log.e("Logger", "Error writing the log to a file. Exception: " + e.toString());

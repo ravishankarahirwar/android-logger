@@ -25,6 +25,7 @@ import android.content.DialogInterface;
 import android.content.Intent;
 import android.content.ServiceConnection;
 import android.graphics.Typeface;
+import android.net.Uri;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.IBinder;
@@ -63,6 +64,7 @@ public class Logger extends Activity {
 	public static final int DIALOG_FILTER_ID = 1;
 	public static final int DIALOG_SAVE_ID = 2;
 	public static final int DIALOG_SAVE_PROGRESS_ID = 3;
+	public static final int DIALOG_EMAIL_ID = 4;
 	public static final int FILTER_OPTION = Menu.FIRST;
 	public static final int EMAIL_OPTION = Menu.FIRST + 1;
 	public static final int SAVE_OPTION = Menu.FIRST + 2;
@@ -109,6 +111,7 @@ public class Logger extends Activity {
     		onCreateDialog(DIALOG_FILTER_ID);
     		break;
     	case EMAIL_OPTION:
+    		generateEmailMessage();
     		break;
     	case SAVE_OPTION:
     		onCreateDialog(DIALOG_SAVE_ID);
@@ -140,7 +143,10 @@ public class Logger extends Activity {
     		break;
     	case DIALOG_SAVE_PROGRESS_ID:
     		mProgressDialog = ProgressDialog.show(this, "", "Saving...", true);
-    		break;
+    		return mProgressDialog;
+    	case DIALOG_EMAIL_ID:
+    		mProgressDialog = ProgressDialog.show(this, "", "Generating attachment...", true);
+    		return mProgressDialog;
     	default:
     		break;
     	}
@@ -245,8 +251,25 @@ public class Logger extends Activity {
     	
     	if (msg.equals("error")) {
     		Toast.makeText(this, "Error while saving the log to file!", Toast.LENGTH_LONG).show();
-    	} else {
+    	} else if (msg.equals("saved")) {
     		Toast.makeText(this, "Log has been saved to file.", Toast.LENGTH_LONG).show();
+    	} else if (msg.equals("attachment")) {
+    		Intent mail = new Intent(Intent.ACTION_SEND);
+    		mail.setType("text/plain");
+    		mail.putExtra(Intent.EXTRA_SUBJECT, "Logger Debug Output");
+    		mail.putExtra(Intent.EXTRA_STREAM, Uri.parse("file:///sdcard/tmp.log"));
+    		mail.putExtra(Intent.EXTRA_TEXT, "Here's the output from my log file. Thanks!");
+    		startActivity(Intent.createChooser(mail, "Email:"));
+    	}
+    }
+    
+    private void generateEmailMessage() {
+    	onCreateDialog(DIALOG_EMAIL_ID);
+    	
+    	try {
+    		mService.write("tmp.log");
+    	} catch (RemoteException e) {
+    		Log.e("Logger", "Error generating email attachment.");
     	}
     }
     
