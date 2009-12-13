@@ -104,7 +104,7 @@ public class Logger extends Activity {
     	//little housekeeping.
     	File f = new File("/sdcard/tmp.log");
     	if (f.exists()) {
-    		f.delete();
+    		f.deleteOnExit();
     	}
     	
     }
