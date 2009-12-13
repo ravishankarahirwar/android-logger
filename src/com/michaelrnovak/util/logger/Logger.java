@@ -217,7 +217,7 @@ public class Logger extends Activity {
     		EditText et = (EditText) t.findViewById(R.id.filename);
     		et.setText(mFilterTag);
     		builder.setView(t);
-    		builder.setNegativeButton("Cancel", mTagListener);
+    		builder.setNegativeButton("Clear Filter", mTagListener);
     		builder.setPositiveButton("Filter", mTagListener);
     		mDialog = builder.create();
     		break;
@@ -272,7 +272,7 @@ public class Logger extends Activity {
 	    		Log.d("Logger", "Filename: " + et.getText().toString());
 	    		
 				try {
-					mService.write(et.getText().toString());
+					mService.write(et.getText().toString(), mFilterTag);
 				} catch (RemoteException e) {
 					Log.e("Logger", "Trouble writing the log to a file");
 				}
@@ -287,6 +287,11 @@ public class Logger extends Activity {
 				EditText et = (EditText) mDialog.findViewById(R.id.filename);
 				
 				mFilterTag = et.getText().toString().trim();
+				updateFilterTag();
+			} else {
+				EditText et = (EditText) mDialog.findViewById(R.id.filename);
+				et.setText("");
+				mFilterTag = "";
 				updateFilterTag();
 			}
 		}
@@ -421,7 +426,7 @@ public class Logger extends Activity {
     	onCreateDialog(DIALOG_EMAIL_ID);
     	
     	try {
-    		mService.write("tmp.log");
+    		mService.write("tmp.log", mFilterTag);
     	} catch (RemoteException e) {
     		Log.e("Logger", "Error generating email attachment.");
     	}

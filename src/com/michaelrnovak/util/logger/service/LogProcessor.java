@@ -39,6 +39,7 @@ public class LogProcessor extends Service {
 	private Vector<String> mScrollback;
 	private int mLines;
 	private int mType;
+	private String mFilterTag;
 	private volatile boolean threadKill = false;
 	private volatile boolean mStatus = false;
 	public int MAX_LINES = 250;
@@ -200,7 +201,8 @@ public class LogProcessor extends Service {
 			stopSelf();
 		}
 		
-		public void write(String file) {
+		public void write(String file, String tag) {
+			mFilterTag = tag;
 			mFile = file;
 			Thread thr = new Thread(writer);
 			thr.start();
@@ -221,7 +223,16 @@ public class LogProcessor extends Service {
 			FileWriter w = new FileWriter(f);
 			
 			for (int i = 0; i < mScrollback.size(); i++) {
-				w.write(mScrollback.elementAt(i) + "\n");
+				String line = mScrollback.elementAt(i);
+				
+				if (!mFilterTag.equals("")) {
+		    		String tag = line.substring(2, line.indexOf("("));
+		    		
+		    		if (mFilterTag.toLowerCase().equals(tag.toLowerCase().trim())) {
+		    			w.write(line + "\n");
+		    		}
+		    	}
+
 				i++;
 			}
 			

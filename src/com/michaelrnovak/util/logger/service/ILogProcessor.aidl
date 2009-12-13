@@ -23,5 +23,5 @@ interface ILogProcessor {
 	void run(int type);
 	void restart(int type);
 	void stop();
-	void write(String file);
+	void write(String file, String tag);
 }
