@@ -16,29 +16,48 @@
 package com.michaelrnovak.util.logger;
 
 import android.app.Activity;
+import android.app.AlertDialog;
+import android.app.Dialog;
 import android.content.ComponentName;
+import android.content.Context;
+import android.content.DialogInterface;
 import android.content.Intent;
+import android.content.ServiceConnection;
 import android.graphics.Typeface;
 import android.os.Bundle;
 import android.os.Handler;
+import android.os.IBinder;
 import android.os.Message;
+import android.os.RemoteException;
 import android.text.SpannableString;
 import android.text.style.ForegroundColorSpan;
 import android.text.style.StyleSpan;
 import android.util.Log;
+import android.view.Menu;
+import android.view.MenuItem;
 import android.view.ViewGroup.LayoutParams;
 import android.widget.LinearLayout;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import com.michaelrnovak.util.logger.service.ILogProcessor;
 import com.michaelrnovak.util.logger.service.LogProcessor;
 
 import java.util.HashMap;
 
 public class Logger extends Activity {
+	private ILogProcessor mService;
 	private ScrollView mScrollView;
 	private LinearLayout mLines;
+	private AlertDialog mDialog;
+	private int mFilter = -1;
+	private boolean mServiceRunning = false;
 	public int MAX_LINES = 250;
+	public static final int DIALOG_FILTER_ID = 1;
+	public static final int FILTER_OPTION = Menu.FIRST;
+	public static final int EMAIL_OPTION = Menu.FIRST + 1;
+	final CharSequence[] items = {"Debug", "Error", "Info", "Verbose", "Warn", "All"};
+	final char[] mFilters = {'D', 'E', 'I', 'V', 'W'};
 	
     /** Called when the activity is first created. */
     @Override
@@ -49,20 +68,97 @@ public class Logger extends Activity {
         mScrollView = (ScrollView) findViewById(R.id.scrollView);
         mLines = (LinearLayout) findViewById(R.id.lines);
         
-        startLogging();
+    }
+    
+    @Override
+    public void onResume() {
+    	super.onResume();
+    	bindService(new Intent(this, LogProcessor.class), mConnection, Context.BIND_AUTO_CREATE);
+    }
+    
+    @Override
+    public void onPause() {
+    	super.onPause();
+    	unbindService(mConnection);
+    }
+    
+    @Override
+    public boolean onCreateOptionsMenu(Menu menu) {
+    	super.onCreateOptionsMenu(menu);
+    	
+    	menu.add(0, FILTER_OPTION, 1, "Filter Log").setIcon(android.R.drawable.ic_menu_view);
+    	menu.add(0, EMAIL_OPTION, 1, "Email Log").setIcon(android.R.drawable.ic_menu_send);
+    	
+    	return true;
+    }
+    
+    @Override
+    public boolean onOptionsItemSelected(MenuItem item) {
+    	switch (item.getItemId()) {
+    	case FILTER_OPTION:
+    		onCreateDialog(DIALOG_FILTER_ID);
+    		break;
+    	case EMAIL_OPTION:
+    		break;
+    	}
+    	
+    	return false;
+    }
+    
+    protected Dialog onCreateDialog(int id) {
+    	AlertDialog.Builder builder = new AlertDialog.Builder(this);
+    	
+    	switch (id) {
+    	case DIALOG_FILTER_ID:
+    		builder.setTitle("Select a filter level");
+    		builder.setSingleChoiceItems(items, mFilter, mClickListener);
+    		mDialog = builder.create();
+    		break;
+    	}
+    	
+    	mDialog.show();
+    	return mDialog;
+    }
+    
+    DialogInterface.OnClickListener mClickListener = new DialogInterface.OnClickListener() {
+		
+		@Override
+		public void onClick(DialogInterface dialog, int which) {
+			if (which == 5) {
+				mFilter = -1;
+			} else {
+				mFilter = which;
+			}
+			
+			updateFilter();
+		}
+	};
+
+    public void stopLogging() {
+    	unbindService(mConnection);
+    	mServiceRunning = false;
+    	
+    	if (mServiceRunning) {
+    		Log.d("Logger", "mServiceRunning is still TRUE");
+    	}
     }
     
     public void startLogging() {
-    	Intent serviceIntent = new Intent(Logger.this, LogProcessor.class);
+    	bindService(new Intent(this, LogProcessor.class), mConnection, Context.BIND_AUTO_CREATE);
     	
-    	ComponentName service = startService(serviceIntent);
-    	
-    	assert(service != null);
-    	
-    	LogProcessor.setHandler(mHandler);
+    	try {
+    		mService.run();
+    		mServiceRunning = true;
+    	} catch (RemoteException e) {
+    		Log.e("Logger", "Could not start logging");
+    	}
     }
     
     private void handleLogMessage(String line) {
+    	if (mFilter != -1 && line.charAt(0) != mFilters[mFilter]) {
+    		return;
+    	}
+    	
     	TextView lineView = new TextView(this);
     	lineView.setTypeface(Typeface.MONOSPACE);
     	lineView.setText(new LogFormattedString(line));
@@ -85,6 +181,18 @@ public class Logger extends Activity {
     	});
     }
     
+    private void updateFilter() {
+    	mLines.removeAllViews();
+    	
+    	try {
+    		mService.reset();
+    	} catch (RemoteException e) {
+    		Log.e("Logger", "Service is gone...");
+    	}
+    	
+    	mDialog.dismiss();
+    }
+    
     public Handler mHandler = new Handler() {
     	public void handleMessage(Message msg) {
     		switch (msg.what) {
@@ -102,6 +210,25 @@ public class Logger extends Activity {
     		}
     	}
     };
+    
+    private ServiceConnection mConnection = new ServiceConnection() {
+		public void onServiceConnected(ComponentName className, IBinder service) {
+			mService = ILogProcessor.Stub.asInterface((IBinder)service);
+			LogProcessor.setHandler(mHandler);
+			
+			try {
+				mService.run();
+				mServiceRunning = true;
+			} catch (RemoteException e) {
+				Log.e("Logger", "Could not start logging");
+			}
+		}
+		
+		public void onServiceDisconnected(ComponentName className) {
+			Log.i("Logger", "onServiceDisconnected has been called");
+			mService = null;
+		}
+	};
     
     private static class LogFormattedString extends SpannableString {
     	public static final HashMap<Character, Integer> LABEL_COLOR_MAP;

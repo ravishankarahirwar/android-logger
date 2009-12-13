@@ -17,11 +17,10 @@ package com.michaelrnovak.util.logger.service;
 
 import android.app.Service;
 import android.content.Intent;
-import android.os.Binder;
 import android.os.IBinder;
 import android.os.Handler;
 import android.os.Message;
-import android.os.Parcel;
+import android.util.Log;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -36,6 +35,7 @@ public class LogProcessor extends Service {
 	public static final int MSG_READ_FAIL = 1;
 	public static final int MSG_LOG_FAIL = 2;
 	public static final int MSG_NEW_LINE = 3;
+	public static final int MSG_RESET_LOG = 4;
 	
 	@Override
 	public void onCreate() {
@@ -45,16 +45,12 @@ public class LogProcessor extends Service {
 	@Override
 	public void onStart(Intent intent, int startId) {
 		super.onStart(intent, startId);
-
-		mLines = 0;
-		
-		mThread = new Thread(worker);
-		mThread.start();
+		Log.i("Logger", "Logger Service has hit the onStart method.");
 	}
-	
+
 	Runnable worker = new Runnable() {
 		public void run() {
-			LogProcessor.this.runLog();
+			runLog();
 		}
 	};
 	
@@ -98,14 +94,38 @@ public class LogProcessor extends Service {
 		return mBinder;
 	}
 	
-	private final IBinder mBinder = new Binder() {
-		@Override
-		protected boolean onTransact(int code, Parcel data, Parcel reply, int flags) {
-			try {
-				return super.onTransact(code, data, reply, flags);
-			} catch (Exception e) {
-				return false;
-			}
+	@Override
+	public boolean onUnbind(Intent intent) {
+		Thread tmp = mThread;
+		mThread = null;
+		tmp.interrupt();
+		stopSelf();
+		
+		return false;
+	}
+	
+	private final ILogProcessor.Stub mBinder = new ILogProcessor.Stub() {
+		public void reset() {
+			mThread.interrupt();
+			mLines = 0;
+			
+			mThread = new Thread(worker);
+			mThread.start();
+		}
+		
+		public void run() {
+			mLines = 0;
+			mThread = new Thread(worker);
+			mThread.start();
+		}
+		
+		public void stop() {
+			Log.i("Logger", "stop() method called in service.");
+			Thread tmp = mThread;
+			mThread = null;
+			tmp.interrupt();
+			stopSelf();
 		}
 	};
+
 }
